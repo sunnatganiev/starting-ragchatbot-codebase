@@ -38,7 +38,7 @@ uv run <command>
 ### Environment Setup
 Required: Create `.env` file with:
 ```
-ANTHROPIC_API_KEY=your_key_here
+OPENAI_API_KEY=your_key_here
 ```
 
 ## Architecture Overview
@@ -47,22 +47,22 @@ ANTHROPIC_API_KEY=your_key_here
 
 This system implements a **sophisticated tool-calling architecture** rather than traditional retrieve-then-generate RAG:
 
-1. **First Claude API Call** (ai_generator.py:80)
+1. **First OpenAI API Call** (ai_generator.py:80)
    - User query sent with tools available
-   - Claude autonomously decides whether to search course content
-   - Returns `stop_reason="tool_use"` if search needed
+   - GPT-4o-mini autonomously decides whether to search course content
+   - Returns `finish_reason="tool_calls"` if search needed
 
-2. **Tool Execution** (ai_generator.py:89-135)
+2. **Tool Execution** (ai_generator.py:89-155)
    - `CourseSearchTool` executes vector search
    - Results formatted with course/lesson metadata
    - Sources tracked separately for UI display
 
-3. **Second Claude API Call** (ai_generator.py:127-135)
-   - Original query + tool results sent to Claude
-   - Claude synthesizes answer **without meta-commentary**
+3. **Second OpenAI API Call** (ai_generator.py:145-154)
+   - Original query + tool results sent to GPT-4o-mini
+   - GPT-4o-mini synthesizes answer **without meta-commentary**
    - System prompt enforces: no "based on search results" language
 
-**Why This Matters:** Claude intelligently skips search for general questions, reducing latency and cost. The two-call pattern enables context-aware synthesis without cluttering responses.
+**Why This Matters:** GPT-4o-mini intelligently skips search for general questions, reducing latency and cost. The two-call pattern enables context-aware synthesis without cluttering responses.
 
 ### Dual ChromaDB Collection Strategy
 
@@ -119,9 +119,9 @@ Lesson Link: [url]
 **Key Settings** (config.py):
 - `CHUNK_SIZE=800`: Balances context vs. precision
 - `CHUNK_OVERLAP=100`: Ensures continuity across boundaries
-- `MAX_RESULTS=5`: Prevents context overload for Claude
+- `MAX_RESULTS=5`: Prevents context overload for GPT-4o-mini
 - `MAX_HISTORY=2`: Recent context without token bloat
-- `ANTHROPIC_MODEL=claude-sonnet-4-20250514`: Optimized for tool use
+- `OPENAI_MODEL=gpt-4o-mini`: Fast, cost-efficient with strong tool use
 
 ## Code Organization Principles
 
@@ -132,7 +132,7 @@ Lesson Link: [url]
 - Coordinates query flow
 - No business logic (delegates to components)
 
-**ai_generator.py** - Claude API abstraction
+**ai_generator.py** - OpenAI API abstraction
 - Handles two-stage API calls
 - Manages tool execution loop
 - System prompt defined as static class constant (performance optimization)
@@ -160,7 +160,7 @@ Lesson Link: [url]
 3. Sources included in API response for frontend display
 4. `tool_manager.reset_sources()` clears for next query
 
-**Why Separate:** Keeps Claude's response clean (no citations in text) while providing UI with rich source data.
+**Why Separate:** Keeps GPT-4o-mini's response clean (no citations in text) while providing UI with rich source data.
 
 **System Prompt Strategy:**
 - Defined once as class constant `AIGenerator.SYSTEM_PROMPT`

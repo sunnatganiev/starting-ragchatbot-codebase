@@ -1,6 +1,14 @@
 import warnings
 warnings.filterwarnings("ignore", message="resource_tracker: There appear to be.*")
 
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -40,10 +48,15 @@ class QueryRequest(BaseModel):
     query: str
     session_id: Optional[str] = None
 
+class Source(BaseModel):
+    """Source with label and optional link"""
+    label: str
+    link: Optional[str] = None
+
 class QueryResponse(BaseModel):
     """Response model for course queries"""
     answer: str
-    sources: List[str]
+    sources: List[Source]
     session_id: str
 
 class CourseStats(BaseModel):
@@ -56,22 +69,40 @@ class CourseStats(BaseModel):
 @app.post("/api/query", response_model=QueryResponse)
 async def query_documents(request: QueryRequest):
     """Process a query and return response with sources"""
+    import traceback
+
     try:
         # Create session if not provided
         session_id = request.session_id
         if not session_id:
             session_id = rag_system.session_manager.create_session()
-        
+
         # Process query using RAG system
         answer, sources = rag_system.query(request.query, session_id)
-        
+
         return QueryResponse(
             answer=answer,
             sources=sources,
             session_id=session_id
         )
+    except ValueError as e:
+        # Configuration or validation errors
+        print(f"Configuration error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Configuration error: {str(e)}"
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log the full traceback for debugging
+        error_details = traceback.format_exc()
+        print(f"Query error:\n{error_details}")
+
+        # Return meaningful error message
+        error_type = type(e).__name__
+        raise HTTPException(
+            status_code=500,
+            detail=f"{error_type}: {str(e)}"
+        )
 
 @app.get("/api/courses", response_model=CourseStats)
 async def get_course_stats():

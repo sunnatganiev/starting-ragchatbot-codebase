@@ -1,6 +1,10 @@
 from typing import Dict, Any, Optional, Protocol
 from abc import ABC, abstractmethod
+import logging
 from vector_store import VectorStore, SearchResults
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 
 class Tool(ABC):
@@ -25,54 +29,59 @@ class CourseSearchTool(Tool):
         self.last_sources = []  # Track sources from last search
     
     def get_tool_definition(self) -> Dict[str, Any]:
-        """Return Anthropic tool definition for this tool"""
+        """Return OpenAI tool definition for this tool"""
         return {
-            "name": "search_course_content",
-            "description": "Search course materials with smart course name matching and lesson filtering",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string", 
-                        "description": "What to search for in the course content"
+            "type": "function",
+            "function": {
+                "name": "search_course_content",
+                "description": "Search course materials with smart course name matching and lesson filtering. Use ONLY for specific course content questions, not general knowledge.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "What to search for in the course content"
+                        },
+                        "course_name": {
+                            "type": "string",
+                            "description": "Course title (partial matches work, e.g. 'MCP', 'Introduction')"
+                        },
+                        "lesson_number": {
+                            "type": "integer",
+                            "description": "Specific lesson number to search within (e.g. 1, 2, 3)"
+                        }
                     },
-                    "course_name": {
-                        "type": "string",
-                        "description": "Course title (partial matches work, e.g. 'MCP', 'Introduction')"
-                    },
-                    "lesson_number": {
-                        "type": "integer",
-                        "description": "Specific lesson number to search within (e.g. 1, 2, 3)"
-                    }
-                },
-                "required": ["query"]
+                    "required": ["query"]
+                }
             }
         }
     
     def execute(self, query: str, course_name: Optional[str] = None, lesson_number: Optional[int] = None) -> str:
         """
         Execute the search tool with given parameters.
-        
+
         Args:
             query: What to search for
             course_name: Optional course filter
             lesson_number: Optional lesson filter
-            
+
         Returns:
             Formatted search results or error message
         """
-        
+        logger.info(f"CourseSearchTool executing: query='{query}', course='{course_name}', lesson={lesson_number}")
+
         # Use the vector store's unified search interface
         results = self.store.search(
             query=query,
             course_name=course_name,
             lesson_number=lesson_number
         )
-        
+
         # Handle errors
         if results.error:
+            logger.error(f"Search error: {results.error}")
             return results.error
-        
+
         # Handle empty results
         if results.is_empty():
             filter_info = ""
@@ -80,56 +89,155 @@ class CourseSearchTool(Tool):
                 filter_info += f" in course '{course_name}'"
             if lesson_number:
                 filter_info += f" in lesson {lesson_number}"
+            logger.warning(f"No results found{filter_info}")
             return f"No relevant content found{filter_info}."
-        
+
         # Format and return results
+        logger.info(f"Found {len(results.documents)} results")
         return self._format_results(results)
     
     def _format_results(self, results: SearchResults) -> str:
         """Format search results with course and lesson context"""
         formatted = []
-        sources = []  # Track sources for the UI
-        
+        sources = []  # Track rich source objects for the UI
+
         for doc, meta in zip(results.documents, results.metadata):
             course_title = meta.get('course_title', 'unknown')
             lesson_num = meta.get('lesson_number')
-            
+
             # Build context header
             header = f"[{course_title}"
             if lesson_num is not None:
                 header += f" - Lesson {lesson_num}"
             header += "]"
-            
-            # Track source for the UI
-            source = course_title
+
+            # Build source label
+            source_label = course_title
             if lesson_num is not None:
-                source += f" - Lesson {lesson_num}"
-            sources.append(source)
-            
+                source_label += f" - Lesson {lesson_num}"
+
+            # Retrieve lesson link from vector store
+            lesson_link = None
+            if lesson_num is not None:
+                lesson_link = self.store.get_lesson_link(course_title, lesson_num)
+
+            # Create rich source object with label and link
+            source_obj = {
+                "label": source_label,
+                "link": lesson_link
+            }
+            sources.append(source_obj)
+
             formatted.append(f"{header}\n{doc}")
-        
-        # Store sources for retrieval
+
+        # Store rich source objects for retrieval
         self.last_sources = sources
-        
+
         return "\n\n".join(formatted)
+
+class CourseOutlineTool(Tool):
+    """Tool for retrieving course outlines with lesson information"""
+
+    def __init__(self, vector_store: VectorStore):
+        self.store = vector_store
+        self.last_sources = []
+
+    def get_tool_definition(self) -> Dict[str, Any]:
+        """Return OpenAI tool definition for this tool"""
+        return {
+            "type": "function",
+            "function": {
+                "name": "get_course_outline",
+                "description": "Get the complete outline of a course including all lessons. Use this when users ask about course structure, outline, or what lessons are in a course.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "course_name": {
+                            "type": "string",
+                            "description": "Course title (partial matches work, e.g. 'MCP', 'Introduction')"
+                        }
+                    },
+                    "required": ["course_name"]
+                }
+            }
+        }
+
+    def execute(self, course_name: str) -> str:
+        """
+        Retrieve course outline with all lessons.
+
+        Args:
+            course_name: The course name to search for
+
+        Returns:
+            Formatted course outline with lessons
+        """
+        import json
+
+        logger.info(f"CourseOutlineTool executing: course_name='{course_name}'")
+
+        # Resolve course name using semantic search
+        course_title = self.store._resolve_course_name(course_name)
+        if not course_title:
+            logger.warning(f"No course found matching '{course_name}'")
+            return f"No course found matching '{course_name}'"
+
+        logger.info(f"Resolved course: '{course_title}'")
+
+        # Get course metadata from catalog
+        try:
+            results = self.store.course_catalog.get(ids=[course_title])
+            if not results or not results['metadatas']:
+                return f"Course '{course_title}' found but no metadata available"
+
+            metadata = results['metadatas'][0]
+            course_link = metadata.get('course_link', 'No link available')
+            lessons_json = metadata.get('lessons_json', '[]')
+            lessons = json.loads(lessons_json)
+
+            # Format the output
+            output = f"Course: {course_title}\n"
+            output += f"Course Link: {course_link}\n\n"
+            output += f"Lessons ({len(lessons)} total):\n"
+
+            for lesson in lessons:
+                lesson_num = lesson.get('lesson_number', '?')
+                lesson_title = lesson.get('lesson_title', 'Untitled')
+                output += f"  Lesson {lesson_num}: {lesson_title}\n"
+
+            # Store source for UI
+            self.last_sources = [{
+                "label": f"{course_title} - Course Outline",
+                "link": course_link
+            }]
+
+            return output
+
+        except Exception as e:
+            return f"Error retrieving course outline: {str(e)}"
+
 
 class ToolManager:
     """Manages available tools for the AI"""
-    
+
     def __init__(self):
         self.tools = {}
     
     def register_tool(self, tool: Tool):
         """Register any tool that implements the Tool interface"""
         tool_def = tool.get_tool_definition()
-        tool_name = tool_def.get("name")
+        # Handle OpenAI format (nested under 'function')
+        if "function" in tool_def:
+            tool_name = tool_def["function"].get("name")
+        else:
+            tool_name = tool_def.get("name")
         if not tool_name:
             raise ValueError("Tool must have a 'name' in its definition")
         self.tools[tool_name] = tool
 
     
     def get_tool_definitions(self) -> list:
-        """Get all tool definitions for Anthropic tool calling"""
+        """Get all tool definitions for OpenAI function calling"""
         return [tool.get_tool_definition() for tool in self.tools.values()]
     
     def execute_tool(self, tool_name: str, **kwargs) -> str:
