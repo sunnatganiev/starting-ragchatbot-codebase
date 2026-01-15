@@ -19,3 +19,20 @@ dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = [
+    "-v",                    # Verbose output
+    "--strict-markers",      # Enforce marker registration
+    "--tb=short",           # Shorter traceback format
+    "-ra",                  # Show summary of all test outcomes
+]
+markers = [
+    "unit: Unit tests for individual components",
+    "integration: Integration tests across components",
+    "api: API endpoint tests",
+]
