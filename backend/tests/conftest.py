@@ -242,3 +242,87 @@ def mock_openai_client_max_rounds_reached():
 
     client.chat.completions.create.side_effect = [mock_resp1, mock_resp2, mock_resp3]
     return client
+
+
+# API Testing Fixtures
+
+@pytest.fixture
+def mock_rag_system_for_api():
+    """Mock RAG system specifically for API tests."""
+    rag = Mock()
+
+    # Mock query method to return answer and sources
+    rag.query.return_value = (
+        "Test answer about prompt caching",
+        [{"label": "Test Course - Lesson 1", "link": "https://example.com/lesson1"}]
+    )
+
+    # Mock get_course_analytics method
+    rag.get_course_analytics.return_value = {
+        "total_courses": 2,
+        "course_titles": ["Course 1", "Course 2"]
+    }
+
+    # Mock session manager
+    rag.session_manager = Mock()
+    rag.session_manager.create_session.return_value = "session_123"
+
+    return rag
+
+
+@pytest.fixture
+def test_app(mock_rag_system_for_api):
+    """Create a test FastAPI app without static files mounting."""
+    from fastapi import FastAPI, HTTPException
+
+    # Import Pydantic models from app.py
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from app import QueryRequest, QueryResponse, CourseStats, Source
+
+    app = FastAPI()
+    test_rag = mock_rag_system_for_api
+
+    @app.post("/api/query", response_model=QueryResponse)
+    async def query_documents(request: QueryRequest):
+        """Test endpoint for query processing."""
+        try:
+            session_id = request.session_id
+            if not session_id:
+                session_id = test_rag.session_manager.create_session()
+
+            answer, sources = test_rag.query(request.query, session_id)
+
+            # Convert sources to Source objects if they're dicts
+            if sources and isinstance(sources[0], dict):
+                sources = [Source(**source) for source in sources]
+
+            return QueryResponse(
+                answer=answer,
+                sources=sources,
+                session_id=session_id
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/api/courses", response_model=CourseStats)
+    async def get_course_stats():
+        """Test endpoint for course statistics."""
+        try:
+            analytics = test_rag.get_course_analytics()
+            return CourseStats(
+                total_courses=analytics["total_courses"],
+                course_titles=analytics["course_titles"]
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    return app
+
+
+@pytest.fixture
+def test_client(test_app):
+    """Create FastAPI test client from test app."""
+    from fastapi.testclient import TestClient
+    return TestClient(test_app)
