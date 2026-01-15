@@ -1,14 +1,17 @@
 """
 Shared pytest fixtures for RAG chatbot tests.
 """
-import pytest
-from unittest.mock import Mock
+
 from dataclasses import dataclass
+from unittest.mock import Mock
+
+import pytest
 
 
 @dataclass
 class MockConfig:
     """Test configuration matching the real Config structure."""
+
     OPENAI_API_KEY: str = "test-api-key"
     OPENAI_MODEL: str = "gpt-4o-mini"
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
@@ -141,7 +144,7 @@ def mock_openai_client_with_tool_call():
     # Return different responses on consecutive calls
     client.chat.completions.create.side_effect = [
         mock_response_tool,
-        mock_response_final
+        mock_response_final,
     ]
 
     return client
@@ -178,7 +181,9 @@ def mock_openai_client_two_tool_rounds():
     mock_tool_call_2.id = "call_round2"
     mock_tool_call_2.type = "function"
     mock_tool_call_2.function.name = "search_course_content"
-    mock_tool_call_2.function.arguments = '{"query": "lesson 3 prompt caching", "lesson_number": 3}'
+    mock_tool_call_2.function.arguments = (
+        '{"query": "lesson 3 prompt caching", "lesson_number": 3}'
+    )
 
     mock_msg2 = Mock()
     mock_msg2.content = None

@@ -1,11 +1,13 @@
-from openai import OpenAI
 import json
 import logging
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
+
 from config import config
+from openai import OpenAI
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
 
 class AIGenerator:
     """Handles interactions with OpenAI's GPT-4o-mini API for generating responses"""
@@ -56,16 +58,15 @@ For general questions about programming concepts, definitions, or common knowled
         self.model = model
 
         # Pre-build base API parameters
-        self.base_params = {
-            "model": self.model,
-            "temperature": 0.0,
-            "max_tokens": 800
-        }
+        self.base_params = {"model": self.model, "temperature": 0.0, "max_tokens": 800}
 
-    def generate_response(self, query: str,
-                         conversation_history: Optional[str] = None,
-                         tools: Optional[List] = None,
-                         tool_manager=None) -> str:
+    def generate_response(
+        self,
+        query: str,
+        conversation_history: Optional[str] = None,
+        tools: Optional[List] = None,
+        tool_manager=None,
+    ) -> str:
         """
         Generate AI response with optional tool usage and conversation context.
 
@@ -89,7 +90,7 @@ For general questions about programming concepts, definitions, or common knowled
         # OpenAI requires system message as first message in array
         messages = [
             {"role": "system", "content": system_content},
-            {"role": "user", "content": query}
+            {"role": "user", "content": query},
         ]
 
         # If tools are available, use the tool calling loop
@@ -101,7 +102,9 @@ For general questions about programming concepts, definitions, or common knowled
         response = self._make_api_call(messages, tools=None)
         return response.choices[0].message.content
 
-    def _make_api_call(self, messages: List[Dict[str, Any]], tools: Optional[List] = None):
+    def _make_api_call(
+        self, messages: List[Dict[str, Any]], tools: Optional[List] = None
+    ):
         """
         Make an OpenAI API call with given messages and optional tools.
 
@@ -115,10 +118,7 @@ For general questions about programming concepts, definitions, or common knowled
         Raises:
             Exception: If API call fails
         """
-        api_params = {
-            **self.base_params,
-            "messages": messages
-        }
+        api_params = {**self.base_params, "messages": messages}
 
         if tools:
             api_params["tools"] = tools
@@ -129,7 +129,9 @@ For general questions about programming concepts, definitions, or common knowled
 
         try:
             response = self.client.chat.completions.create(**api_params)
-            logger.debug(f"API call successful, finish_reason: {response.choices[0].finish_reason}")
+            logger.debug(
+                f"API call successful, finish_reason: {response.choices[0].finish_reason}"
+            )
             return response
         except Exception as e:
             logger.error(f"API call failed: {e}")
@@ -152,7 +154,9 @@ For general questions about programming concepts, definitions, or common knowled
         response = self._make_api_call(messages, tools=None)
         return response.choices[0].message.content
 
-    def _execute_tool_calling_loop(self, messages: List[Dict[str, Any]], tools: List, tool_manager) -> str:
+    def _execute_tool_calling_loop(
+        self, messages: List[Dict[str, Any]], tools: List, tool_manager
+    ) -> str:
         """
         Execute tool calling loop supporting up to MAX_TOOL_ROUNDS sequential rounds.
 
@@ -177,7 +181,9 @@ For general questions about programming concepts, definitions, or common knowled
         logger.info(f"Starting tool calling loop (max {max_rounds} rounds)")
 
         for round_num in range(max_rounds):
-            logger.debug(f"Tool round {round_num + 1}/{max_rounds}: Making API call with tools")
+            logger.debug(
+                f"Tool round {round_num + 1}/{max_rounds}: Making API call with tools"
+            )
 
             # Make API call with tools available
             response = self._make_api_call(messages, tools)
@@ -189,15 +195,21 @@ For general questions about programming concepts, definitions, or common knowled
 
             # Execute tools and update message history
             logger.info(f"Tool calls detected in round {round_num + 1}")
-            messages, _ = self._execute_single_tool_round(response, messages, tool_manager)
+            messages, _ = self._execute_single_tool_round(
+                response, messages, tool_manager
+            )
 
             logger.info(f"Completed tool round {round_num + 1}/{max_rounds}")
 
         # Max rounds reached - make final call without tools
-        logger.info(f"Max tool rounds ({max_rounds}) reached, making final synthesis call")
+        logger.info(
+            f"Max tool rounds ({max_rounds}) reached, making final synthesis call"
+        )
         return self._make_final_api_call(messages)
 
-    def _execute_single_tool_round(self, api_response, messages: List[Dict[str, Any]], tool_manager) -> tuple[List[Dict[str, Any]], bool]:
+    def _execute_single_tool_round(
+        self, api_response, messages: List[Dict[str, Any]], tool_manager
+    ) -> tuple[List[Dict[str, Any]], bool]:
         """
         Execute tools from a single API response and update message history.
 
@@ -213,21 +225,23 @@ For general questions about programming concepts, definitions, or common knowled
         """
         # Add AI's tool use response (entire message object)
         assistant_message = api_response.choices[0].message
-        messages.append({
-            "role": "assistant",
-            "content": assistant_message.content,
-            "tool_calls": [
-                {
-                    "id": tc.id,
-                    "type": tc.type,
-                    "function": {
-                        "name": tc.function.name,
-                        "arguments": tc.function.arguments
+        messages.append(
+            {
+                "role": "assistant",
+                "content": assistant_message.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
                     }
-                }
-                for tc in assistant_message.tool_calls
-            ]
-        })
+                    for tc in assistant_message.tool_calls
+                ],
+            }
+        )
 
         # Execute all tool calls and collect results
         for tool_call in assistant_message.tool_calls:
@@ -244,12 +258,14 @@ For general questions about programming concepts, definitions, or common knowled
                 logger.error(f"Raw arguments string: {tool_call.function.arguments}")
                 # Return error as tool result instead of silently failing
                 tool_result = f"Error: {error_msg}"
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": tool_name,
-                    "content": tool_result
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_name,
+                        "content": tool_result,
+                    }
+                )
                 continue
 
             # Execute tool
@@ -261,17 +277,21 @@ For general questions about programming concepts, definitions, or common knowled
                 tool_result = f"Error executing tool: {str(e)}"
 
             # Add tool result message
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "name": tool_call.function.name,
-                "content": tool_result
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": tool_call.function.name,
+                    "content": tool_result,
+                }
+            )
 
         # Return updated messages and signal to continue (more rounds possible)
         return messages, True
 
-    def _handle_tool_execution(self, initial_response, base_messages: List[Dict[str, Any]], tool_manager):
+    def _handle_tool_execution(
+        self, initial_response, base_messages: List[Dict[str, Any]], tool_manager
+    ):
         """
         Legacy method: Handle execution of tool calls and get follow-up response.
         This is kept for backward compatibility during refactoring.
@@ -285,7 +305,9 @@ For general questions about programming concepts, definitions, or common knowled
             Final response text after tool execution
         """
         # Execute single round
-        messages, _ = self._execute_single_tool_round(initial_response, base_messages.copy(), tool_manager)
+        messages, _ = self._execute_single_tool_round(
+            initial_response, base_messages.copy(), tool_manager
+        )
 
         # Get final response without tools using helper method
         # Deliberately omit tools to prevent recursive calling

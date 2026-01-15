@@ -2,12 +2,14 @@
 Unit tests for CourseSearchTool.execute() method.
 Tests the search tool's ability to handle various scenarios.
 """
-import pytest
-import sys
+
 import os
+import sys
+
+import pytest
 
 # Add backend to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from search_tools import CourseSearchTool
 
@@ -21,9 +23,7 @@ class TestCourseSearchToolExecute:
         result = tool.execute(query="prompt caching")
 
         mock_vector_store.search.assert_called_once_with(
-            query="prompt caching",
-            course_name=None,
-            lesson_number=None
+            query="prompt caching", course_name=None, lesson_number=None
         )
         assert "[Test Course - Lesson 1]" in result
         assert "Content about prompt caching" in result
@@ -34,9 +34,7 @@ class TestCourseSearchToolExecute:
         tool.execute(query="test", course_name="MCP")
 
         mock_vector_store.search.assert_called_with(
-            query="test",
-            course_name="MCP",
-            lesson_number=None
+            query="test", course_name="MCP", lesson_number=None
         )
 
     def test_execute_with_lesson_filter(self, mock_vector_store):
@@ -45,9 +43,7 @@ class TestCourseSearchToolExecute:
         tool.execute(query="test", lesson_number=3)
 
         mock_vector_store.search.assert_called_with(
-            query="test",
-            course_name=None,
-            lesson_number=3
+            query="test", course_name=None, lesson_number=3
         )
 
     def test_execute_with_all_filters(self, mock_vector_store):
@@ -56,9 +52,7 @@ class TestCourseSearchToolExecute:
         tool.execute(query="caching", course_name="MCP Course", lesson_number=5)
 
         mock_vector_store.search.assert_called_with(
-            query="caching",
-            course_name="MCP Course",
-            lesson_number=5
+            query="caching", course_name="MCP Course", lesson_number=5
         )
 
     def test_execute_with_empty_results(self, mock_vector_store_empty):

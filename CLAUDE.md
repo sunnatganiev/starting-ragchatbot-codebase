@@ -41,6 +41,50 @@ Required: Create `.env` file with:
 OPENAI_API_KEY=your_key_here
 ```
 
+### Code Quality Tools
+
+The project uses several tools to maintain code quality and consistency:
+
+**Tools Installed:**
+- `black`: Code formatter (line length: 88)
+- `isort`: Import organizer (configured to work with black)
+- `flake8`: Linter for style and error checking
+- `mypy`: Static type checker
+- `pytest`: Testing framework with coverage reporting
+
+**Quick Commands:**
+```bash
+# Format code automatically
+./format.sh
+
+# Run all quality checks
+./quality.sh
+
+# Auto-fix formatting issues
+./fix.sh
+
+# Individual tools
+uv run black backend/              # Format code
+uv run isort backend/               # Organize imports
+uv run flake8 backend/              # Lint code
+uv run mypy backend/                # Type check
+uv run pytest                       # Run tests with coverage
+```
+
+**Configuration Files:**
+- `pyproject.toml`: Contains configuration for black, isort, mypy, and pytest
+- `.flake8`: Flake8-specific configuration (max line length, ignored rules)
+
+**Development Workflow:**
+1. Before committing: Run `./fix.sh` to auto-format code
+2. Before pushing: Run `./quality.sh` to ensure all checks pass
+3. CI/CD should run `./quality.sh` to enforce quality standards
+
+**Common Flake8 Ignore Rules:**
+- `E203`: Whitespace before ':' (conflicts with black)
+- `E501`: Line too long (handled by black)
+- `W503`: Line break before binary operator (PEP 8 updated)
+
 ## Architecture Overview
 
 ### Two-Stage Tool-Based RAG Pattern
